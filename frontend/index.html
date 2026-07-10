@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待办清单 · 前后端分离示例</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📝 待办清单</h1>
+        <p class="subtitle">Spring Boot 后端 + 原生 JavaScript 前端</p>
+
+        <!-- 新增一条 -->
+        <div class="add-row">
+            <input id="title" type="text" placeholder="输入待办事项，回车或点添加..." autofocus>
+            <button id="addBtn">添加</button>
+        </div>
+
+        <!-- 待办列表 -->
+        <ul id="list"></ul>
+
+        <p class="tip">
+            后端接口地址：<code id="apiBase"></code><br>
+            打开 <a href="http://localhost:8080/h2-console" target="_blank">H2 数据库控制台</a> 可直接看表数据。
+        </p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
