@@ -1,12 +1,12 @@
-# 前端改造 Vue 3 + TypeScript 实施计划
+# 前端改造 Vue 3 + TypeScript（中后台结构）实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 `frontend/` 从原生 JS 静态页替换为 Vite + Vue 3 + TypeScript 单页应用，功能与界面不变，构建产物由 Spring Boot 托管。
+**Goal:** 把 `frontend/` 替换为 Vite + Vue 3 + TS + ant-design-vue 的中后台模块结构应用（api/type 分离、constant、权限 hooks、views 组装层、use-search/use-table-columns 配置化 hooks、抽屉、hash 路由双页面），后端零改动。
 
-**Architecture:** 前端独立 `frontend/` 目录（npm 项目），组合式 API；`api/todo.ts` 类型化封装后端 REST；`App.vue` 持有状态，`TodoItem.vue` 展示单条。开发走 5173 + Vite 代理，构建输出到 `src/main/resources/static` 由 8081 托管。
+**Architecture:** `frontend/src/` 即业务模块：`views/list/index.vue` 组装搜索栏 + 表格 + 抽屉；搜索/分页前端本地做；构建产物输出 `src/main/resources/static` 由 Spring Boot 8081 托管，开发走 5173 + Vite 代理。
 
-**Tech Stack:** Vue ^3.5、TypeScript ~5.8、Vite ^7、vitest + @vue/test-utils（单测）。后端 Spring Boot 不动。
+**Tech Stack:** Vue ^3.5、ant-design-vue ^4.2（按需引入）、vue-router ^4.5（hash）、@vitejs/plugin-vue-jsx、unplugin-vue-components、vitest + jsdom。
 
 **Spec:** `docs/superpowers/specs/2026-08-26-vue-ts-frontend-design.md`
 
@@ -15,23 +15,23 @@
 - 后端代码**零改动**（含 CorsConfig、application.properties、接口）。
 - 后端端口 **8081**，Vite 开发端口 **5173**，`/api` 代理到 `http://localhost:8081`。
 - 接口契约：`GET/POST /api/todos`、`PUT/DELETE /api/todos/{id}`，`Todo { id: number; title: string; done: boolean }`。
-- 统一 `<script setup lang="ts">`；**不引入** axios、Pinia、Vue Router、UI 组件库。
-- `npm run build` 产物输出到 `src/main/resources/static`，该目录**保持 git 跟踪**（clone 后不用 npm 也能跑）。
-- 界面与原版一致（样式原样迁移，仅选择器适配）。
-- 所有 shell 命令在项目根 `c:/Users/爱速智/Projects/test` 下执行；前端命令需先 `cd frontend`（每次 Bash 调用独立，不能依赖上一次的 cd）。
+- antd **按需引入**（unplugin-vue-components，仅 SFC 模板生效；`.tsx` 内组件显式 import）。
+- 路由用 **hash 模式**；**不引入** Pinia、axios、ESLint。
+- `npm run build` 产物输出到 `src/main/resources/static`，该目录**保持 git 跟踪**。
+- 所有 shell 命令在项目根执行；前端命令每次调用都要 `cd frontend`（Bash 调用间不共享 cwd）。
 
 ---
 
-### Task 1: Vite + Vue 3 + TS 项目骨架
+### Task 1: Vite + Vue 3 + TS + JSX + antd 按需构建链骨架
 
 **Files:**
 - Delete: `frontend/index.html`、`frontend/app.js`、`frontend/style.css`
 - Create: `frontend/package.json`、`frontend/vite.config.ts`、`frontend/tsconfig.json`、`frontend/index.html`、`frontend/src/main.ts`、`frontend/src/App.vue`（占位）
-- Modify: `.gitignore`（追加 node_modules/）
+- Modify: `.gitignore`
 
 **Interfaces:**
-- Consumes: 无（首个任务）
-- Produces: 可 `npm run dev` / `npm run build` 的空壳应用；`npm run test`（vitest，暂无测试文件，退出码 0）；`test` 脚本供 Task 2/3 使用。
+- Consumes: 无
+- Produces: 可 dev/build/test 的空壳；`npm run test` 脚本；构建插件链（后续任务直接用）。
 
 - [ ] **Step 1: 删除旧前端三件**
 
@@ -40,6 +40,8 @@ git rm frontend/index.html frontend/app.js frontend/style.css
 ```
 
 - [ ] **Step 2: 创建 `frontend/package.json`**
+
+版本若 npm 解析失败，用 `npm install <pkg>@latest` 对应替换后继续。
 
 ```json
 {
@@ -54,13 +56,16 @@ git rm frontend/index.html frontend/app.js frontend/style.css
     "test:watch": "vitest"
   },
   "dependencies": {
-    "vue": "^3.5.13"
+    "ant-design-vue": "^4.2.6",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
-    "@vue/test-utils": "^2.4.6",
+    "@vitejs/plugin-vue-jsx": "^4.1.0",
     "jsdom": "^26.1.0",
     "typescript": "~5.8.3",
+    "unplugin-vue-components": "^28.0.0",
     "vite": "^7.0.0",
     "vitest": "^3.2.4",
     "vue-tsc": "^2.2.12"
@@ -73,22 +78,34 @@ git rm frontend/index.html frontend/app.js frontend/style.css
 ```ts
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import vueJsx from '@vitejs/plugin-vue-jsx'
+import Components from 'unplugin-vue-components/vite'
+import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
-  // 开发时：npm run dev 起在 5173，/api 开头的请求代理给后端 8081
+  plugins: [
+    vue(),
+    vueJsx(),
+    // antd 组件按需自动引入：只在 SFC 模板里生效（<a-button> 等）；
+    // .tsx 里的 JSX 不走模板编译，组件需显式 import。
+    // v4 用 cssinjs，无需引入样式文件。
+    Components({
+      resolvers: [AntDesignVueResolver({ importStyle: false })],
+    }),
+  ],
+  // 开发时：npm run dev 起在 5173，/api 请求代理给后端 8081
   server: {
     proxy: {
       '/api': 'http://localhost:8081',
     },
   },
-  // 构建：产物直接输出到 Spring Boot 的静态资源目录，后端 8081 托管
+  // 构建：产物输出到 Spring Boot 静态资源目录
   build: {
     outDir: '../src/main/resources/static',
     emptyOutDir: true,
   },
-  // 单测：组件测试需要 DOM 环境
+  // 单测：jsdom 环境
   test: {
     environment: 'jsdom',
   },
@@ -104,13 +121,14 @@ export default defineConfig({
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
     "strict": true,
     "noEmit": true,
     "isolatedModules": true,
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
 }
 ```
 
@@ -122,7 +140,7 @@ export default defineConfig({
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>待办清单 · 前后端分离示例</title>
+    <title>待办管理 · 前后端分离示例</title>
     <link rel="icon" href="data:,">
 </head>
 <body>
@@ -139,6 +157,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 
 // 把根组件挂到 index.html 的 #app 上
+// （Task 3 接入 router 后会变成 createApp(App).use(router).mount('#app')）
 createApp(App).mount('#app')
 ```
 
@@ -149,9 +168,9 @@ createApp(App).mount('#app')
 </script>
 
 <template>
-  <div class="container">
-    <h1>📝 待办清单</h1>
-    <p class="subtitle">Spring Boot 后端 + Vue 3 + TypeScript 前端（搭建中）</p>
+  <div style="max-width: 720px; margin: 80px auto; text-align: center">
+    <h1>📝 待办管理（搭建中）</h1>
+    <p>Spring Boot 后端 + Vue 3 + TypeScript + ant-design-vue 前端</p>
   </div>
 </template>
 ```
@@ -169,45 +188,34 @@ node_modules/
 cd frontend && npm install && npm run build
 ```
 
-Expected: 依赖安装成功；`vue-tsc --noEmit` 无报错；vite 输出 `✓ built in ...`；`ls ../src/main/resources/static` 可见 `index.html` 与 `assets/` 目录。
+Expected: 安装成功；`vue-tsc --noEmit` 无报错；vite `✓ built in ...`；`ls ../src/main/resources/static` 可见 `index.html` 与 `assets/`。
 
-- [ ] **Step 10: 验证测试脚本空跑**
-
-```bash
-cd frontend && npm run test
-```
-
-Expected: `No test files found` 但退出码为 0（vitest run 无文件时 exit 0；若版本行为不同报非零，记录实际输出，不阻塞）。
-
-- [ ] **Step 11: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: 前端替换为 Vite + Vue 3 + TypeScript 项目骨架"
+git commit -m "feat: 前端替换为 Vite + Vue3 + TS + antd 按需构建链骨架"
 ```
 
 ---
 
-### Task 2: api/todo.ts 类型化接口层（TDD）
+### Task 2: api 层（type.ts + index.ts，TDD）
 
 **Files:**
-- Create: `frontend/src/api/todo.ts`
-- Test: `frontend/src/api/todo.test.ts`
+- Create: `frontend/src/api/type.ts`、`frontend/src/api/index.ts`
+- Test: `frontend/src/api/index.test.ts`
 
 **Interfaces:**
-- Consumes: 无（纯 fetch 封装）
-- Produces（Task 3/4 依赖，签名必须一致）:
-  - `export interface Todo { id: number; title: string; done: boolean }`
-  - `listTodos(): Promise<Todo[]>`
-  - `createTodo(title: string): Promise<Todo>`
-  - `updateTodo(todo: Todo): Promise<Todo>`
-  - `deleteTodo(id: number): Promise<void>`
+- Consumes: 无
+- Produces（后续所有任务依赖，签名必须一致）:
+  - `api/type.ts`: `export interface Todo { id: number; title: string; done: boolean }`
+  - `api/index.ts`: `listTodos(): Promise<Todo[]>`、`createTodo(title: string): Promise<Todo>`、`updateTodo(todo: Todo): Promise<Todo>`、`deleteTodo(id: number): Promise<void>`
 
-- [ ] **Step 1: 写失败测试 `frontend/src/api/todo.test.ts`**
+- [ ] **Step 1: 写失败测试 `frontend/src/api/index.test.ts`**
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTodo, deleteTodo, listTodos, updateTodo } from './todo'
+import { createTodo, deleteTodo, listTodos, updateTodo } from './index'
 
 // 本项目的 api 层只用了 res.json()，用最简对象模拟 fetch 返回即可
 function mockFetch(body?: unknown) {
@@ -280,25 +288,31 @@ describe('deleteTodo', () => {
 cd frontend && npm run test
 ```
 
-Expected: FAIL，报 `Failed to resolve import "./todo"`（模块还不存在）。
+Expected: FAIL，`Failed to resolve import "./index"`。
 
-- [ ] **Step 3: 写实现 `frontend/src/api/todo.ts`**
+- [ ] **Step 3: 写 `frontend/src/api/type.ts`**
 
 ```ts
-// ============================================================
-//  接口层：用 fetch 调用后端 REST 接口，TypeScript 保证类型安全。
-//  开发时走相对路径 /api/todos，由 Vite 代理到 http://localhost:8081；
-//  构建后由 Spring Boot 在同源 8081 下直接提供服务。
-// ============================================================
-
-const API = '/api/todos'
-
 /** 一条待办 —— 对应后端 com.example.demo.entity.Todo */
 export interface Todo {
   id: number
   title: string
   done: boolean
 }
+```
+
+- [ ] **Step 4: 写 `frontend/src/api/index.ts`**
+
+```ts
+// ============================================================
+//  接口层：数据长什么样在 ./type.ts，这里只管"怎么调"。
+//  开发时 /api/todos 由 Vite 代理到 http://localhost:8081；
+//  构建后由 Spring Boot 在同源 8081 下直接提供服务。
+// ============================================================
+
+import type { Todo } from './type'
+
+const API = '/api/todos'
 
 /** 统一发请求 + 解析 JSON */
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -335,67 +349,47 @@ export async function deleteTodo(id: number): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **Step 5: 跑测试确认通过**
 
 ```bash
 cd frontend && npm run test
 ```
 
-Expected: 4 个测试全 PASS。
+Expected: 4 个 PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add frontend/src/api
-git commit -m "feat: 前端接口层 todo.ts（Todo 类型 + fetch 封装）及单测"
+git commit -m "feat: 前端接口层（type.ts 类型 + index.ts 函数）及单测"
 ```
 
 ---
 
-### Task 3: TodoItem.vue 单条待办组件（TDD）
+### Task 3: constant、权限配置、路由与页面外壳
 
 **Files:**
-- Create: `frontend/src/components/TodoItem.vue`
-- Test: `frontend/src/components/TodoItem.test.ts`
+- Create: `frontend/src/constant/index.ts`、`frontend/src/use-permission-config.ts`、`frontend/src/router/index.ts`、`frontend/src/views/list/index.vue`（占位）、`frontend/src/views/operation-log/index.vue`
+- Test: `frontend/src/use-permission-config.test.ts`
+- Modify: `frontend/src/main.ts`、`frontend/src/App.vue`
 
 **Interfaces:**
-- Consumes: `import type { Todo } from '../api/todo'`（Task 2 产出）
-- Produces（Task 4 依赖）: 组件 props `{ todo: Todo }`；emits `toggle`（无参）、`remove`（无参）；根元素 `<li>`，勾选框 `input[type="checkbox"]`、标题 `.title`、删除按钮 `.del`、完成态加类 `done`。
+- Consumes: 无新依赖（路由懒加载引用占位页面）
+- Produces:
+  - `constant/index.ts`: `STATUS_OPTIONS: { label: string; value: string }[]`（全部/未完成/已完成）
+  - `use-permission-config.ts`: `usePermissionConfig(): PermissionConfig`，`PermissionConfig { canAdd: boolean; canEdit: boolean; canDelete: boolean }`
+  - `router/index.ts`: 默认导出 router（hash 模式，`/` 重定向 `/list`）
 
-- [ ] **Step 1: 写失败测试 `frontend/src/components/TodoItem.test.ts`**
+- [ ] **Step 1: 写失败测试 `frontend/src/use-permission-config.test.ts`**
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
-import TodoItem from './TodoItem.vue'
+import { usePermissionConfig } from './use-permission-config'
 
-const todo = { id: 7, title: '写周报', done: false }
-
-describe('TodoItem', () => {
-  it('渲染标题，复选框未勾选', () => {
-    const wrapper = mount(TodoItem, { props: { todo } })
-    expect(wrapper.find('.title').text()).toBe('写周报')
-    const box = wrapper.find('input[type="checkbox"]').element as HTMLInputElement
-    expect(box.checked).toBe(false)
-  })
-
-  it('done=true 时 li 加 done 类且复选框勾选', () => {
-    const wrapper = mount(TodoItem, { props: { todo: { ...todo, done: true } } })
-    expect(wrapper.find('li').classes()).toContain('done')
-    const box = wrapper.find('input[type="checkbox"]').element as HTMLInputElement
-    expect(box.checked).toBe(true)
-  })
-
-  it('点击复选框 emit toggle', async () => {
-    const wrapper = mount(TodoItem, { props: { todo } })
-    await wrapper.find('input[type="checkbox"]').setValue(true)
-    expect(wrapper.emitted('toggle')).toHaveLength(1)
-  })
-
-  it('点击删除按钮 emit remove', async () => {
-    const wrapper = mount(TodoItem, { props: { todo } })
-    await wrapper.find('.del').trigger('click')
-    expect(wrapper.emitted('remove')).toHaveLength(1)
+describe('usePermissionConfig', () => {
+  it('返回新增/编辑/删除三个权限点', () => {
+    const p = usePermissionConfig()
+    expect(p).toEqual({ canAdd: true, canEdit: true, canDelete: true })
   })
 })
 ```
@@ -406,280 +400,632 @@ describe('TodoItem', () => {
 cd frontend && npm run test
 ```
 
-Expected: 新增 4 个用例 FAIL（无法解析 `./TodoItem.vue`），Task 2 的 4 个仍 PASS。
+Expected: 新用例 FAIL（模块不存在），api 的 4 个仍 PASS。
 
-- [ ] **Step 3: 写实现 `frontend/src/components/TodoItem.vue`**
+- [ ] **Step 3: 写 `frontend/src/constant/index.ts`**
+
+```ts
+/** 固定值集中放这里：下拉选项、字典等 */
+
+/** 列表页「状态」下拉筛选项（本地过滤用） */
+export interface StatusOption {
+  label: string
+  value: string
+}
+
+export const STATUS_OPTIONS: StatusOption[] = [
+  { label: '全部', value: 'all' },
+  { label: '未完成', value: 'undone' },
+  { label: '已完成', value: 'done' },
+]
+```
+
+- [ ] **Step 4: 写 `frontend/src/use-permission-config.ts`**
+
+```ts
+/**
+ * 按钮权限配置。
+ * 真实项目里这里通常读当前用户角色或接口下发的权限点；
+ * 本示例没有登录体系，静态全开，演示「视图层按权限点控制按钮显隐」的写法。
+ */
+export interface PermissionConfig {
+  canAdd: boolean
+  canEdit: boolean
+  canDelete: boolean
+}
+
+export function usePermissionConfig(): PermissionConfig {
+  return {
+    canAdd: true,
+    canEdit: true,
+    canDelete: true,
+  }
+}
+```
+
+- [ ] **Step 5: 写 `frontend/src/router/index.ts`**
+
+```ts
+import { createRouter, createWebHashHistory } from 'vue-router'
+
+/**
+ * hash 路由（地址带 #）：构建产物由 Spring Boot 静态托管，
+ * 深链刷新（如直接打开 /#/operation-log）不需要后端配 SPA 转发。
+ */
+const router = createRouter({
+  history: createWebHashHistory(),
+  routes: [
+    { path: '/', redirect: '/list' },
+    {
+      path: '/list',
+      name: 'TodoList',
+      component: () => import('../views/list/index.vue'),
+    },
+    {
+      path: '/operation-log',
+      name: 'OperationLog',
+      component: () => import('../views/operation-log/index.vue'),
+    },
+  ],
+})
+
+export default router
+```
+
+- [ ] **Step 6: 写占位 `frontend/src/views/list/index.vue`**
 
 ```vue
 <script setup lang="ts">
-import type { Todo } from '../api/todo'
-
-// 单条待办：只负责展示和上报事件，接口调用都集中在 App.vue
-defineProps<{ todo: Todo }>()
-defineEmits<{ toggle: []; remove: [] }>()
 </script>
 
 <template>
-  <li :class="{ done: todo.done }">
-    <input type="checkbox" :checked="todo.done" @change="$emit('toggle')" />
-    <span class="title">{{ todo.title }}</span>
-    <button class="del" @click="$emit('remove')">删除</button>
-  </li>
+  <a-card>
+    <a-empty description="待办列表（Task 5 实现完整功能）" />
+  </a-card>
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **Step 7: 写 `frontend/src/views/operation-log/index.vue`（空壳）**
+
+```vue
+<script setup lang="ts">
+</script>
+
+<template>
+  <a-card>
+    <a-empty description="操作日志（占位页，待实现）" />
+  </a-card>
+</template>
+```
+
+- [ ] **Step 8: 替换 `frontend/src/main.ts` 接入路由**
+
+```ts
+import { createApp } from 'vue'
+import App from './App.vue'
+import router from './router'
+
+createApp(App).use(router).mount('#app')
+```
+
+- [ ] **Step 9: 替换 `frontend/src/App.vue` 为布局外壳**
+
+```vue
+<script setup lang="ts">
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+// 侧边导航（真实项目一般由菜单接口/权限生成）
+const menus = [
+  { key: '/list', label: '待办列表' },
+  { key: '/operation-log', label: '操作日志' },
+]
+</script>
+
+<template>
+  <a-layout style="min-height: 100vh">
+    <a-layout-header style="background: #001529; display: flex; align-items: center">
+      <div style="color: #fff; font-size: 18px; font-weight: 600">📝 待办管理</div>
+    </a-layout-header>
+    <a-layout>
+      <a-layout-sider theme="light">
+        <a-menu mode="inline" :selected-keys="[route.path]">
+          <a-menu-item v-for="m in menus" :key="m.key">
+            <RouterLink :to="m.key">{{ m.label }}</RouterLink>
+          </a-menu-item>
+        </a-menu>
+      </a-layout-sider>
+      <a-layout-content style="padding: 24px">
+        <RouterView />
+      </a-layout-content>
+    </a-layout>
+  </a-layout>
+</template>
+```
+
+- [ ] **Step 10: 验证测试与构建**
+
+```bash
+cd frontend && npm run test && npm run build
+```
+
+Expected: 5 个测试 PASS；构建成功（懒加载分包正常生成）。
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add frontend/src
+git commit -m "feat: constant/权限配置/hash 路由与布局外壳、操作日志空壳页"
+```
+
+---
+
+### Task 4: use-search.tsx 与 use-table-columns.tsx（TDD）
+
+**Files:**
+- Create: `frontend/src/views/list/hooks/use-search.tsx`、`frontend/src/views/list/hooks/use-table-columns.tsx`
+- Test: `frontend/src/views/list/hooks/use-search.test.ts`、`frontend/src/views/list/hooks/use-table-columns.test.ts`
+
+**Interfaces:**
+- Consumes: `Todo`（api/type）、`STATUS_OPTIONS`（constant）、`PermissionConfig`（use-permission-config）
+- Produces（Task 5 依赖）:
+  - `useSearch(): { model: SearchModel; fields: SearchField[]; reset: () => void }`，`SearchModel { keyword: string; status: string }`
+  - `useTableColumns(options: { onEdit: (t: Todo) => void; onDelete: (t: Todo) => void; onToggle: (t: Todo) => void; permission: PermissionConfig }): TableColumnType<Todo>[]`
+
+- [ ] **Step 1: 写失败测试 `frontend/src/views/list/hooks/use-search.test.ts`**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { useSearch } from './use-search'
+
+describe('useSearch', () => {
+  it('初始模型为空关键词 + 全部状态', () => {
+    const { model } = useSearch()
+    expect(model.keyword).toBe('')
+    expect(model.status).toBe('all')
+  })
+
+  it('字段配置覆盖关键词与状态', () => {
+    const { fields } = useSearch()
+    expect(fields.map((f) => f.key)).toEqual(['keyword', 'status'])
+  })
+
+  it('reset 清空搜索条件', () => {
+    const { model, reset } = useSearch()
+    model.keyword = '牛奶'
+    model.status = 'done'
+    reset()
+    expect(model.keyword).toBe('')
+    expect(model.status).toBe('all')
+  })
+})
+```
+
+- [ ] **Step 2: 写失败测试 `frontend/src/views/list/hooks/use-table-columns.test.ts`**
+
+```ts
+import { describe, expect, it, vi } from 'vitest'
+import { useTableColumns } from './use-table-columns'
+import type { PermissionConfig } from '../../../use-permission-config'
+
+const permission: PermissionConfig = { canAdd: true, canEdit: true, canDelete: true }
+
+function makeColumns(p: PermissionConfig = permission) {
+  return useTableColumns({
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
+    onToggle: vi.fn(),
+    permission: p,
+  })
+}
+
+describe('useTableColumns', () => {
+  it('生成 ID/标题/状态/操作 四列', () => {
+    const keys = makeColumns().map((c) => String(c.key ?? c.dataIndex))
+    expect(keys).toEqual(['id', 'title', 'done', 'action'])
+  })
+
+  it('状态列和操作列提供 customRender（JSX 渲染）', () => {
+    const columns = makeColumns()
+    expect(typeof columns[2].customRender).toBe('function')
+    expect(typeof columns[3].customRender).toBe('function')
+  })
+
+  it('权限关闭时列结构不变（按钮显隐在渲染层处理）', () => {
+    const columns = makeColumns({ canAdd: true, canEdit: false, canDelete: false })
+    expect(columns).toHaveLength(4)
+  })
+})
+```
+
+- [ ] **Step 3: 跑测试确认失败**
 
 ```bash
 cd frontend && npm run test
 ```
 
-Expected: 8 个测试全 PASS。
+Expected: 6 个新用例 FAIL（两个 hooks 模块不存在），已有 5 个仍 PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: 写 `frontend/src/views/list/hooks/use-search.tsx`**
+
+```tsx
+import { reactive } from 'vue'
+import { STATUS_OPTIONS } from '../../../constant'
+
+/**
+ * 搜索栏配置。index.vue 按 fields 渲染表单项；
+ * .tsx 后缀：将来某个搜索项需要自定义渲染时直接写 JSX。
+ */
+export interface SearchModel {
+  keyword: string
+  status: string
+}
+
+export interface SearchField {
+  label: string
+  key: keyof SearchModel
+  component: 'input' | 'select'
+  placeholder?: string
+  options?: { label: string; value: string }[]
+}
+
+export function useSearch() {
+  const model = reactive<SearchModel>({ keyword: '', status: 'all' })
+
+  const fields: SearchField[] = [
+    {
+      label: '关键词',
+      key: 'keyword',
+      component: 'input',
+      placeholder: '按标题搜索',
+    },
+    {
+      label: '状态',
+      key: 'status',
+      component: 'select',
+      options: STATUS_OPTIONS,
+    },
+  ]
+
+  function reset() {
+    model.keyword = ''
+    model.status = 'all'
+  }
+
+  return { model, fields, reset }
+}
+```
+
+- [ ] **Step 5: 写 `frontend/src/views/list/hooks/use-table-columns.tsx`**
+
+```tsx
+import { Button, Popconfirm, Switch } from 'ant-design-vue'
+import type { TableColumnType } from 'ant-design-vue'
+import type { Todo } from '../../../api/type'
+import type { PermissionConfig } from '../../../use-permission-config'
+
+/**
+ * 表格列配置。.tsx：状态列/操作列的 customRender 用 JSX 写最顺手。
+ * 注意：JSX 不经过模板编译，antd 组件必须显式 import（按需插件只作用于模板）。
+ */
+export interface UseTableColumnsOptions {
+  onEdit: (todo: Todo) => void
+  onDelete: (todo: Todo) => void
+  /** Switch 切换完成状态 */
+  onToggle: (todo: Todo) => void
+  permission: PermissionConfig
+}
+
+export function useTableColumns({ onEdit, onDelete, onToggle, permission }: UseTableColumnsOptions) {
+  const columns: TableColumnType<Todo>[] = [
+    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: '标题', dataIndex: 'title' },
+    {
+      title: '状态',
+      dataIndex: 'done',
+      width: 140,
+      customRender: ({ record }) => (
+        <Switch
+          checked={record.done}
+          checkedChildren="完成"
+          unCheckedChildren="未完"
+          disabled={!permission.canEdit}
+          onChange={() => onToggle(record as Todo)}
+        />
+      ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 160,
+      customRender: ({ record }) => (
+        <>
+          {permission.canEdit && (
+            <Button type="link" size="small" onClick={() => onEdit(record as Todo)}>
+              编辑
+            </Button>
+          )}
+          {permission.canDelete && (
+            <Popconfirm title="确认删除这条待办？" onConfirm={() => onDelete(record as Todo)}>
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
+        </>
+      ),
+    },
+  ]
+
+  return columns
+}
+```
+
+- [ ] **Step 6: 跑测试确认通过**
 
 ```bash
-git add frontend/src/components
-git commit -m "feat: TodoItem 单条待办组件及单测"
+cd frontend && npm run test
+```
+
+Expected: 11 个测试全 PASS。
+
+- [ ] **Step 7: 验证构建（含 tsx 编译与类型检查）**
+
+```bash
+cd frontend && npm run build
+```
+
+Expected: 构建成功。
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add frontend/src/views/list/hooks
+git commit -m "feat: use-search / use-table-columns 配置化 hooks 及单测"
 ```
 
 ---
 
-### Task 4: App.vue 组装与样式迁移
+### Task 5: 抽屉组件与列表页组装
 
 **Files:**
-- Modify: `frontend/src/App.vue`（占位替换为完整版）
+- Create: `frontend/src/views/list/components/todo-form-drawer.vue`
+- Modify: `frontend/src/views/list/index.vue`（占位替换为完整实现）
 
 **Interfaces:**
-- Consumes: `listTodos/createTodo/updateTodo/deleteTodo/Todo`（Task 2）、`TodoItem`（Task 3）
-- Produces: 功能完整的最终界面。
+- Consumes: api 层、useSearch、useTableColumns、usePermissionConfig、Todo 类型
+- Produces: 功能完整的列表页。
 
-- [ ] **Step 1: 用下面内容整体替换 `frontend/src/App.vue`**
+- [ ] **Step 1: 写 `frontend/src/views/list/components/todo-form-drawer.vue`**
 
 ```vue
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { createTodo, deleteTodo, listTodos, updateTodo, type Todo } from './api/todo'
-import TodoItem from './components/TodoItem.vue'
+import { ref, watch } from 'vue'
+import type { Todo } from '../../../api/type'
 
-// 全部待办。ref() 包一层，改 .value 才会触发界面更新
-const todos = ref<Todo[]>([])
-// 输入框内容，v-model 双向绑定
+const props = defineProps<{
+  open: boolean
+  /** 传入 = 编辑该条；null = 新增 */
+  todo: Todo | null
+}>()
+
+const emit = defineEmits<{
+  'update:open': [value: boolean]
+  save: [payload: { id?: number; title: string; done: boolean }]
+}>()
+
 const title = ref('')
+const done = ref(false)
 
-// 页面打开时先加载一次 (GET)
-onMounted(load)
+// 抽屉每次打开时，用传入的 todo 初始化表单
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      title.value = props.todo?.title ?? ''
+      done.value = props.todo?.done ?? false
+    }
+  },
+)
 
-async function load() {
-  todos.value = await listTodos()
-}
-
-// 新增 (POST)：回车或点「添加」
-async function add() {
+function handleOk() {
   const text = title.value.trim()
   if (!text) return
-  await createTodo(text)
-  title.value = ''
+  emit('save', { id: props.todo?.id, title: text, done: done.value })
+  emit('update:open', false)
+}
+
+function handleCancel() {
+  emit('update:open', false)
+}
+</script>
+
+<template>
+  <a-drawer :open="open" :title="todo ? '编辑待办' : '新增待办'" @close="handleCancel">
+    <a-form layout="vertical">
+      <a-form-item label="标题" required>
+        <a-input
+          v-model:value="title"
+          placeholder="输入待办标题"
+          @keydown.enter="handleOk"
+        />
+      </a-form-item>
+      <a-form-item v-if="todo" label="完成状态">
+        <a-switch v-model:checked="done" checked-children="完成" un-checked-children="未完" />
+      </a-form-item>
+      <a-form-item>
+        <a-space>
+          <a-button type="primary" @click="handleOk">保存</a-button>
+          <a-button @click="handleCancel">取消</a-button>
+        </a-space>
+      </a-form-item>
+    </a-form>
+  </a-drawer>
+</template>
+```
+
+- [ ] **Step 2: 用完整实现替换 `frontend/src/views/list/index.vue`**
+
+```vue
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { createTodo, deleteTodo, listTodos, updateTodo } from '../../api'
+import type { Todo } from '../../api/type'
+import { usePermissionConfig } from '../../use-permission-config'
+import { useSearch } from './hooks/use-search'
+import { useTableColumns } from './hooks/use-table-columns'
+import TodoFormDrawer from './components/todo-form-drawer.vue'
+
+// ---------- 权限 ----------
+const permission = usePermissionConfig()
+
+// ---------- 搜索（模型 + 字段配置，本地过滤） ----------
+const { model: searchModel, fields: searchFields, reset: resetSearch } = useSearch()
+
+// ---------- 数据 ----------
+const todos = ref<Todo[]>([])
+const loading = ref(false)
+
+async function load() {
+  loading.value = true
+  try {
+    todos.value = await listTodos()
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
+
+// 后端只有全量 GET，关键词/状态过滤都在前端做
+const filtered = computed(() =>
+  todos.value.filter((t) => {
+    const hitKeyword = t.title.includes(searchModel.keyword.trim())
+    const hitStatus =
+      searchModel.status === 'all'
+        ? true
+        : searchModel.status === 'done'
+          ? t.done
+          : !t.done
+    return hitKeyword && hitStatus
+  }),
+)
+
+// ---------- 表格事件 ----------
+async function handleToggle(todo: Todo) {
+  await updateTodo({ ...todo, done: !todo.done })
   await load()
 }
 
-// 切换完成状态 (PUT)
-async function toggle(item: Todo) {
-  await updateTodo({ ...item, done: !item.done })
+async function handleDelete(todo: Todo) {
+  await deleteTodo(todo.id)
   await load()
 }
 
-// 删除 (DELETE)
-async function remove(item: Todo) {
-  await deleteTodo(item.id)
+const columns = useTableColumns({
+  onEdit: (todo) => openDrawer(todo),
+  onDelete: handleDelete,
+  onToggle: handleToggle,
+  permission,
+})
+
+// ---------- 抽屉（新增/编辑共用） ----------
+const drawerOpen = ref(false)
+const editing = ref<Todo | null>(null)
+
+function openDrawer(todo: Todo | null) {
+  editing.value = todo
+  drawerOpen.value = true
+}
+
+async function handleSave(payload: { id?: number; title: string; done: boolean }) {
+  if (payload.id === undefined) {
+    await createTodo(payload.title)
+  } else {
+    await updateTodo({ id: payload.id, title: payload.title, done: payload.done })
+  }
   await load()
 }
 </script>
 
 <template>
-  <div class="container">
-    <h1>📝 待办清单</h1>
-    <p class="subtitle">Spring Boot 后端 + Vue 3 + TypeScript 前端</p>
+  <a-card>
+    <!-- 搜索栏：按 use-search 的 fields 配置渲染 -->
+    <a-form layout="inline" style="margin-bottom: 16px">
+      <a-form-item v-for="field in searchFields" :key="field.key" :label="field.label">
+        <a-input
+          v-if="field.component === 'input'"
+          v-model:value="searchModel[field.key]"
+          :placeholder="field.placeholder"
+          allow-clear
+          style="width: 200px"
+        />
+        <a-select
+          v-else
+          v-model:value="searchModel[field.key]"
+          :options="field.options"
+          style="width: 140px"
+        />
+      </a-form-item>
+      <a-form-item>
+        <a-space>
+          <a-button type="primary" @click="load">查询</a-button>
+          <a-button @click="resetSearch">重置</a-button>
+        </a-space>
+      </a-form-item>
+    </a-form>
 
-    <!-- 新增一条 -->
-    <div class="add-row">
-      <input
-        v-model="title"
-        type="text"
-        placeholder="输入待办事项，回车或点添加..."
-        autofocus
-        @keydown.enter="add"
-      />
-      <button @click="add">添加</button>
-    </div>
+    <!-- 工具栏：新增（受权限点控制） -->
+    <a-button
+      v-if="permission.canAdd"
+      type="primary"
+      style="margin-bottom: 16px"
+      @click="openDrawer(null)"
+    >
+      新增待办
+    </a-button>
 
-    <!-- 待办列表 -->
-    <ul>
-      <TodoItem
-        v-for="todo in todos"
-        :key="todo.id"
-        :todo="todo"
-        @toggle="toggle(todo)"
-        @remove="remove(todo)"
-      />
-    </ul>
+    <!-- 表格：antd 自带前端分页 -->
+    <a-table
+      row-key="id"
+      :columns="columns"
+      :data-source="filtered"
+      :loading="loading"
+      :pagination="{ pageSize: 5, showSizeChanger: false }"
+    />
 
-    <p class="tip">
-      后端接口地址：<code>/api/todos</code>（开发时由 Vite 代理到 http://localhost:8081）<br />
-      打开 <a href="http://localhost:8081/h2-console" target="_blank">H2 数据库控制台</a> 可直接看表数据。
-    </p>
-  </div>
+    <!-- 新增/编辑抽屉 -->
+    <TodoFormDrawer v-model:open="drawerOpen" :todo="editing" @save="handleSave" />
+  </a-card>
 </template>
-
-<!-- 全局样式：由原 frontend/style.css 迁移而来（含 body 级规则，故不加 scoped）。 -->
-<!-- 原页面用 id 选择器 #title/#addBtn，这里没有 id，改为 .add-row 内的元素选择器，视觉不变。 -->
-<style>
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-body {
-    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: #f4f6f8;
-    color: #333;
-    line-height: 1.6;
-    padding: 40px 16px;
-}
-
-.container {
-    max-width: 520px;
-    margin: 0 auto;
-    background: #fff;
-    border-radius: 12px;
-    padding: 28px 24px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-}
-
-h1 {
-    font-size: 26px;
-    text-align: center;
-}
-
-.subtitle {
-    text-align: center;
-    color: #888;
-    font-size: 13px;
-    margin-bottom: 20px;
-}
-
-.add-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 18px;
-}
-
-.add-row input {
-    flex: 1;
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 15px;
-    outline: none;
-}
-
-.add-row input:focus {
-    border-color: #4a90d9;
-}
-
-.add-row button {
-    padding: 10px 18px;
-    background: #4a90d9;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 15px;
-    cursor: pointer;
-}
-
-.add-row button:hover {
-    background: #3a7bc8;
-}
-
-ul {
-    list-style: none;
-}
-
-li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 4px;
-    border-bottom: 1px solid #f0f0f0;
-}
-
-li .title {
-    flex: 1;
-}
-
-li.done .title {
-    text-decoration: line-through;
-    color: #aaa;
-}
-
-li input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-}
-
-.del {
-    background: none;
-    border: none;
-    color: #e0604e;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.del:hover {
-    text-decoration: underline;
-}
-
-.tip {
-    margin-top: 22px;
-    font-size: 12px;
-    color: #999;
-    text-align: center;
-    line-height: 1.8;
-}
-
-.tip a {
-    color: #4a90d9;
-}
-</style>
 ```
 
-- [ ] **Step 2: 全量验证（类型检查 + 构建 + 单测）**
+- [ ] **Step 3: 全量验证（单测 + 类型检查 + 构建）**
 
 ```bash
-cd frontend && npm run build && npm run test
+cd frontend && npm run test && npm run build
 ```
 
-Expected: vue-tsc 无类型错误；vite 构建成功；8 个测试全 PASS。
+Expected: 11 个测试全 PASS；vue-tsc 无类型错误；构建成功。
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/src/App.vue src/main/resources/static
-git commit -m "feat: App.vue 组装完整待办功能并迁移原样式"
+git add frontend/src/views src/main/resources/static
+git commit -m "feat: 列表页组装（搜索+表格+分页+抽屉）与表单抽屉组件"
 ```
 
 ---
 
-### Task 5: 集成验证与 README 更新
+### Task 6: 集成验证与 README 更新
 
 **Files:**
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: Task 1-4 全部产出、后端 8081 服务。
-- Produces: 验收达标的完整项目与更新后的文档。
+- Consumes: Task 1-5 全部产出、后端 8081。
+- Produces: 验收达标的项目与文档。
 
 - [ ] **Step 1: 构建最新产物**
 
@@ -687,37 +1033,30 @@ git commit -m "feat: App.vue 组装完整待办功能并迁移原样式"
 cd frontend && npm run build
 ```
 
-Expected: 构建成功，`../src/main/resources/static` 已更新。
-
-- [ ] **Step 2: 启动后端（后台）**
+- [ ] **Step 2: 启动后端（run_in_background）**
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-（run_in_background 执行）Expected: 日志出现 `Started DemoApplication`；首次运行会下载依赖，稍等。等待方式：轮询 `curl -s http://localhost:8081/api/todos` 直到返回 JSON（超时 3 分钟）。
+等待：轮询 `curl -s http://localhost:8081/api/todos` 直到返回 JSON（首次跑要下载依赖，超时 3 分钟）。
 
-- [ ] **Step 3: 验证 Spring Boot 托管的前端页面**
+- [ ] **Step 3: 验证 8081 托管页面与 H2 控制台**
 
 ```bash
 curl -s http://localhost:8081/
-```
-
-Expected: HTML 含 `<div id="app">` 与 `assets/index-*.js` 引用。
-
-```bash
 curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/h2-console
 ```
 
-Expected: `200`。
+Expected: 第 1 条 HTML 含 `<div id="app">` 与 `assets/index-*.js`；第 2 条返回 `200`。
 
-- [ ] **Step 4: API 增删改查冒烟（后端未动，确认链路完好）**
+- [ ] **Step 4: API 冒烟（确认链路）**
 
 ```bash
 curl -s -X POST http://localhost:8081/api/todos -H "Content-Type: application/json" -d '{"title":"集成验证"}'
 ```
 
-Expected: 返回 `{"id":N,"title":"集成验证","done":false}`。记下 N，继续：
+记下返回的 id（设为 N），然后：
 
 ```bash
 curl -s -X PUT http://localhost:8081/api/todos/N -H "Content-Type: application/json" -d '{"title":"集成验证","done":true}'
@@ -725,41 +1064,48 @@ curl -s -X DELETE http://localhost:8081/api/todos/N
 curl -s http://localhost:8081/api/todos
 ```
 
-Expected: PUT 返回 done=true 的对象；DELETE 无输出；GET 列表中不再有「集成验证」。
+Expected: PUT 返回 done=true；DELETE 无输出；GET 列表无「集成验证」。
 
-- [ ] **Step 5: 验证 Vite 开发模式**
+- [ ] **Step 5: 验证 Vite 开发模式（run_in_background 起 dev）**
 
 ```bash
 cd frontend && npm run dev
 ```
 
-（run_in_background 执行，稍候）然后：
-
-```bash
-curl -s http://localhost:5173/
-```
-
-Expected: HTML 含 `<div id="app">` 且引用 `/src/main.ts`。验证后停掉 dev 进程和后端进程。
+然后 `curl -s http://localhost:5173/`：Expected 含 `<div id="app">` 且引用 `/src/main.ts`。验证后停掉 dev 与后端进程。
 
 - [ ] **Step 6: 更新 README.md**
 
-1. 标题与简介：`# 极简前后端分离示例（Spring Boot + 原生 JS）` → `# 前后端分离示例（Spring Boot + Vue 3 + TypeScript）`；第一段改为「前端用 Vue 3 + TypeScript（Vite 构建）调用接口」，删除「故意写得特别简单：没有 React/Vue…」的引言块，改为「前端用组合式 API + TypeScript，类型安全的接口层；后端四层结构不变」。
-2. 环境要求行后追加：`Node.js 20 及以上（构建前端用）`。
-3. 技术栈表前端行改为：`| 前端 | Vue 3 + TypeScript（Vite） | 组合式 API、类型安全 |`。
-4. 目录结构中 `frontend/` 子树替换为：
+1. 标题改为 `# 前后端分离示例（Spring Boot + Vue 3 + TypeScript）`；简介改为：前端用 Vue 3 + TypeScript + ant-design-vue，按中后台模块结构组织（api/constant/权限/hooks/组装层），后端四层结构不变。
+2. 环境要求追加：`Node.js 20 及以上（构建前端用）`。
+3. 技术栈表前端行改为 `| 前端 | Vue 3 + TypeScript + ant-design-vue（Vite） | 组合式 API、按需引入、hash 路由 |`。
+4. 目录结构 `frontend/` 子树替换为：
 
 ```
-└── frontend/                       # 前端代码（Vue 3 + TypeScript，与后端分离）
+└── frontend/                       # 前端代码（Vue 3 + TS + antd，与后端分离）
     ├── package.json / vite.config.ts / tsconfig.json
     ├── index.html                      # Vite 入口页
     └── src/
-        ├── main.ts                     # 挂载 Vue 应用
-        ├── App.vue                     # 根组件：输入框 + 列表 + 状态
-        ├── api/todo.ts                 # 接口层：Todo 类型 + fetch 封装
-        └── components/TodoItem.vue     # 单条待办组件
+        ├── main.ts                     # 入口：挂载 router
+        ├── App.vue                     # 外壳：布局 + 侧边导航 + RouterView
+        ├── router/index.ts             # hash 路由：/list、/operation-log
+        ├── api/
+        │   ├── index.ts                # 接口怎么调（函数）
+        │   └── type.ts                 # 数据长什么样（类型）
+        ├── constant/index.ts           # 状态筛选等固定值
+        ├── use-permission-config.ts    # 按钮权限（静态演示）
+        └── views/
+            ├── list/                   # 页面主体
+            │   ├── index.vue           # 组装层：搜索+表格+分页+抽屉
+            │   ├── hooks/
+            │   │   ├── use-search.tsx        # 搜索栏配置
+            │   │   └── use-table-columns.tsx # 表格列配置（JSX）
+            │   └── components/
+            │       └── todo-form-drawer.vue  # 新增/编辑表单抽屉
+            └── operation-log/index.vue  # 操作日志空壳页
 ```
 
-   并在 `resources/` 子树中 `data.sql` 行后补一行：`│       └── static/（npm run build 产物，后端直接托管）`（注意与现有 `application.properties`、`data.sql` 的树形符号保持一致）。
+   并在 resources 子树 `data.sql` 行后补：`│       └── static/（npm run build 产物，后端直接托管）`（树形符号与现有保持一致）。
 5. 「三、怎么运行」第 2 步整段替换为：
 
 ```
@@ -776,38 +1122,37 @@ npm run dev
 ```
 
 浏览器打开： **http://localhost:5173**
-（`/api` 请求会由 Vite 自动代理给 8081 的后端，无需关心跨域。）
+（`/api` 请求由 Vite 自动代理给 8081 后端，无需关心跨域。）
 
-**正式模式（一个端口跑全栈）** —— 构建后由后端托管：
+**正式模式（一个端口跑全栈）**：
 
 ```bash
 cd frontend
 npm run build      # 产物输出到 src/main/resources/static
 ```
 
-然后（重新）启动后端，浏览器打开： **http://localhost:8081**
+然后（重新）启动后端，浏览器打开： **http://localhost:8081**（自动进入 `#/list`）。
 ```
 
-6. FAQ 第 3 问「改了代码怎么生效？」的答句改为：后端同原文；前端改为「开发模式下保存即热更新；正式模式改完要重新 `npm run build`（并重启后端）」。
-7. 「七、下一步可以怎么改着玩」中「把前端换成 Vue 或 React」一条替换为「给 `TodoItem.vue` 加双击标题编辑」。
+6. FAQ 第 3 问前端答句改为「开发模式下保存即热更新；正式模式改完要重新 `npm run build`（并重启后端）」。
+7. 「下一步可以怎么改着玩」：把「把前端换成 Vue 或 React」替换为「把 `use-permission-config.ts` 接上真实登录态，体验按钮级权限」「给 operation-log 页补上真实日志数据」两条。
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add README.md
-git commit -m "docs: README 更新为 Vue 3 + TypeScript 前端说明"
+git commit -m "docs: README 更新为 Vue3+TS+antd 中后台结构说明"
 ```
 
-- [ ] **Step 8: 请用户做最终验收**
+- [ ] **Step 8: 请用户浏览器验收**
 
-提示用户亲自在浏览器验证两处（自动化只能覆盖到 HTML/API 层）：
-- http://localhost:8081（构建版）：增、删、勾选、界面与原版一致。
-- `cd frontend && npm run dev` 后访问 http://localhost:5173：同样操作 + 修改代码保存后热更新生效。
+- http://localhost:8081：`#/list` 的增删改查（抽屉新增/编辑、Switch 切换、Popconfirm 删除、搜索、分页）、侧边导航切 `#/operation-log`。
+- `cd frontend && npm run dev` 后 http://localhost:5173：同样操作 + 热更新。
 
 ---
 
 ## Self-Review 记录
 
-- **Spec coverage**：接口契约/类型（Task 2）、组件（Task 3）、状态与数据流（Task 4）、代理与 outDir（Task 1）、旧文件删除与 .gitignore（Task 1）、单测两文件（Task 2/3）、验收标准 1-5（Task 1/4/5 + 用户验收）、README（Task 5）——均有对应任务。后端零改动为全局约束。
-- **Placeholder scan**：无 TBD/「适当处理」类占位；所有代码步骤给出完整代码。
-- **Type consistency**：`Todo` 字段、`listTodos/createTodo(title)/updateTodo(todo)/deleteTodo(id)` 签名在 Task 2 定义、Task 4 消费处一致；`TodoItem` 的 props/emits 在 Task 3 定义、Task 4 模板使用处一致。
+- **Spec coverage**：目录结构全要素（Task 1 骨架 / Task 2 api 双文件 / Task 3 constant+权限+路由+空壳页 / Task 4 两个 hooks / Task 5 抽屉+组装层）；按需引入+JSX+hash 路由+前端过滤分页（Task 1/3/4/5）；11 个单测（2/3/4）；验收 1-5（各 Task + Task 6）；README（Task 6）。后端零改动为全局约束。
+- **Placeholder scan**：无 TBD/空引用；每步均有完整代码或命令。
+- **Type consistency**：`Todo`/api 四函数签名在 Task 2 定义、Task 5 消费一致；`useSearch` 返回结构 Task 4 定义与 Task 5 解构一致；`useTableColumns` 的 options（onEdit/onDelete/onToggle/permission）两任务一致；`SearchModel.status` 用 `string`（与 STATUS_OPTIONS 的 value、模板绑定兼容）。
