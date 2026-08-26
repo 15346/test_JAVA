@@ -35,7 +35,7 @@ CORS 已由 `CorsConfig` 放行 `http://localhost:*`，保持不动（开发走 
 frontend/
   package.json
   vite.config.ts
-  tsconfig.json / tsconfig.app.json / tsconfig.node.json（脚手架标准三件）
+  tsconfig.json（单一配置，类型检查用 vue-tsc --noEmit）
   index.html
   src/
     main.ts                 # 挂载入口
@@ -45,7 +45,7 @@ frontend/
     assets/…（如脚手架生成，可清理）
 ```
 
-旧的 `index.html`、`app.js`、`style.css` 删除（git 历史保留），样式迁入组件 scoped style，视觉效果与原版一致。
+旧的 `index.html`、`app.js`、`style.css` 删除（git 历史保留），样式迁入 `App.vue` 的全局（非 scoped）`<style>` 块——原样式含 `body` 级规则，不适合 scoped；`#title`/`#addBtn` 选择器相应改为 `.add-row input`/`.add-row button`，视觉效果与原版一致。H2 控制台链接改为绝对地址 `http://localhost:8081/h2-console`（原版硬编码 8080 是过期端口）。
 
 ## 4. 关键设计决策
 
