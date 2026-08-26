@@ -1,0 +1,1 @@
+import{q as r}from"./index-D95NazhR.js";import{bI as _,bJ as a,bH as s,c as p,bG as d}from"./index-CJEPBhjv.js";const f=(o,c)=>{const t=o.__vccOpts||o;for(const[n,e]of c)t[n]=e;return t},i={};function m(o,c){const t=d,n=r;return s(),_(n,null,{default:a(()=>[p(t,{description:"操作日志（占位页，待实现）"})]),_:1})}const x=f(i,[["render",m]]);export{x as default};
