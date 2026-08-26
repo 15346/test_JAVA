@@ -1,0 +1,1 @@
+import{_ as n,C as t}from"./_plugin-vue_export-helper-DSGbW4ga.js";import{c,w as _,o as a,a as r,_ as s}from"./index-Dq1wachx.js";const p={};function d(i,m){const o=s,e=t;return a(),c(e,null,{default:_(()=>[r(o,{description:"操作日志（占位页，待实现）"})]),_:1})}const u=n(p,[["render",d]]);export{u as default};
