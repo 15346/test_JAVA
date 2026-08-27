@@ -16,10 +16,10 @@ export default defineConfig({
       resolvers: [AntDesignVueResolver({ importStyle: false })],
     }),
   ],
-  // 开发时：npm run dev 起在 5173，/api 请求代理给后端 8081
+  // 开发时：npm run dev 起在 5173，/api 请求代理给后端 18081
   server: {
     proxy: {
-      '/api': 'http://localhost:8081',
+      '/api': 'http://localhost:18081',
     },
   },
   // 构建：产物输出到 Spring Boot 静态资源目录
