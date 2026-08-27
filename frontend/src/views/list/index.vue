@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { createTodo, deleteTodo, listTodos, updateTodo } from '../../api'
-import type { Todo } from '../../api/type'
-import { usePermissionConfig } from '../../use-permission-config'
+import { createTodo, deleteTodo, listTodos, updateTodo } from './api'
+import type { Todo } from './api/type'
+import { usePermissionConfig } from '../../shared/use-permission-config'
 import { useSearch } from './hooks/use-search'
 import { useTableColumns } from './hooks/use-table-columns'
 import TodoFormDrawer from './components/todo-form-drawer.vue'

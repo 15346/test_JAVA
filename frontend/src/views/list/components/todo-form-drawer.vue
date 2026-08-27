@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import type { Todo } from '../../../api/type'
+import type { Todo } from '../api/type'
 
 const props = defineProps<{
   open: boolean

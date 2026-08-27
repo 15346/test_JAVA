@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { STATUS_OPTIONS } from '../../../constant'
+import { STATUS_OPTIONS } from '../constant'
 
 /**
  * 搜索栏配置。index.vue 按 fields 渲染表单项；

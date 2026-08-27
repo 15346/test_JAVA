@@ -1,7 +1,7 @@
 import { Button, Popconfirm, Switch } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
-import type { Todo } from '../../../api/type'
-import type { PermissionConfig } from '../../../use-permission-config'
+import type { Todo } from '../api/type'
+import type { PermissionConfig } from '../../../shared/use-permission-config'
 
 /**
  * 表格列配置。.tsx：状态列/操作列的 customRender 用 JSX 写最顺手。

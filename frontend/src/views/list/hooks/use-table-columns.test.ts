@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useTableColumns } from './use-table-columns'
-import type { PermissionConfig } from '../../../use-permission-config'
+import type { PermissionConfig } from '../../../shared/use-permission-config'
 
 const permission: PermissionConfig = { canAdd: true, canEdit: true, canDelete: true }
 
