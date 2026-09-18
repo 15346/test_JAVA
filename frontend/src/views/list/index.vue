@@ -1,14 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
 import { createTodo, deleteTodo, listTodos, updateTodo } from './api'
 import type { Todo } from './api/type'
 import { usePermissionConfig } from '../../shared/use-permission-config'
+import { ApiError } from '../../shared/http/request'
+import { useAuth } from '../../modules/auth/hooks/use-auth'
 import { useSearch } from './hooks/use-search'
 import { useTableColumns } from './hooks/use-table-columns'
 import TodoFormDrawer from './components/todo-form-drawer.vue'
 
 // ---------- 权限 ----------
 const permission = usePermissionConfig()
+
+// ---------- 认证 ----------
+const router = useRouter()
+const { clearCurrentUser } = useAuth()
+
+// 统一的错误处理：401（会话过期）清空用户并回登录页，其余用 message 提示
+function handleError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    clearCurrentUser()
+    void router.push('/login')
+    return
+  }
+  message.error(error instanceof Error ? error.message : '操作失败，请稍后重试')
+}
 
 // ---------- 搜索（模型 + 字段配置，本地过滤） ----------
 const { model: searchModel, fields: searchFields, reset: resetSearch } = useSearch()
@@ -21,6 +39,8 @@ async function load() {
   loading.value = true
   try {
     todos.value = await listTodos()
+  } catch (error) {
+    handleError(error)
   } finally {
     loading.value = false
   }
@@ -44,13 +64,21 @@ const filtered = computed(() =>
 
 // ---------- 表格事件 ----------
 async function handleToggle(todo: Todo) {
-  await updateTodo({ ...todo, done: !todo.done })
-  await load()
+  try {
+    await updateTodo({ ...todo, done: !todo.done })
+    await load()
+  } catch (error) {
+    handleError(error)
+  }
 }
 
 async function handleDelete(todo: Todo) {
-  await deleteTodo(todo.id)
-  await load()
+  try {
+    await deleteTodo(todo.id)
+    await load()
+  } catch (error) {
+    handleError(error)
+  }
 }
 
 const columns = useTableColumns({
@@ -70,12 +98,16 @@ function openDrawer(todo: Todo | null) {
 }
 
 async function handleSave(payload: { id?: number; title: string; done: boolean }) {
-  if (payload.id === undefined) {
-    await createTodo(payload.title)
-  } else {
-    await updateTodo({ id: payload.id, title: payload.title, done: payload.done })
+  try {
+    if (payload.id === undefined) {
+      await createTodo(payload.title)
+    } else {
+      await updateTodo({ id: payload.id, title: payload.title, done: payload.done })
+    }
+    await load()
+  } catch (error) {
+    handleError(error)
   }
-  await load()
 }
 </script>
 

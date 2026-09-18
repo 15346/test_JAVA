@@ -1,55 +1,62 @@
 package com.example.demo.service;
 
+import com.example.demo.auth.entity.User;
+import com.example.demo.config.ApiException;
+import com.example.demo.dto.TodoRequest;
+import com.example.demo.dto.TodoResponse;
 import com.example.demo.entity.Todo;
 import com.example.demo.repository.TodoRepository;
-import org.springframework.stereotype.Service;
-
 import java.util.List;
+import org.springframework.stereotype.Service;
 
 /**
  * 业务逻辑层。
  *
- * Controller 不直接操作数据库，而是调用 Service。
- * 分层的好处：Controller 只负责"接收请求 / 返回结果"，
- * 业务规则、数据组装都放在 Service，职责清晰、便于维护和测试。
+ * 所有操作都绑定传入的 {@link User}：查询条件里始终带 userId，
+ * 找不到「id + 当前用户」的记录就抛 404，不泄露其他用户的资源是否存在。
+ * 对外只返回 {@link TodoResponse}，不暴露 Todo 实体或 User。
  */
 @Service
 public class TodoService {
+
+    private static final String NOT_FOUND_CODE = "TODO_NOT_FOUND";
+
+    private static final String NOT_FOUND_MESSAGE = "待办不存在";
 
     private final TodoRepository repository;
 
     /**
      * 构造器注入（推荐写法）。Spring 会自动把 TodoRepository 传进来。
-     * 相比 @Autowired 字段注入，这种方式更清晰、也更容易写单元测试。
      */
     public TodoService(TodoRepository repository) {
         this.repository = repository;
     }
 
-    /** 查询全部待办 */
-    public List<Todo> findAll() {
-        return repository.findAll();
+    /** 查询当前用户的全部待办 */
+    public List<TodoResponse> findAll(User user) {
+        return repository.findByUserId(user.getId()).stream()
+                .map(TodoResponse::from)
+                .toList();
     }
 
-    /** 新增一条待办 */
-    public Todo create(String title) {
-        return repository.save(new Todo(title));
+    /** 为当前用户新增一条待办 */
+    public TodoResponse create(User user, String title) {
+        return TodoResponse.from(repository.save(new Todo(title, false, user)));
     }
 
-    /** 更新待办（标题 / 是否完成） */
-    public Todo update(Long id, Todo updated) {
-        return repository.findById(id)
-                .map(todo -> {                       // 找到记录就更新
-                    todo.setTitle(updated.getTitle());
-                    todo.setDone(updated.isDone());
-                    return repository.save(todo);
-                })
-                .orElseThrow(() ->                   // 找不到就抛异常
-                        new IllegalArgumentException("待办不存在，id = " + id));
+    /** 更新当前用户的一条待办（标题 / 是否完成） */
+    public TodoResponse update(User user, Long id, TodoRequest request) {
+        Todo todo = repository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new ApiException(404, NOT_FOUND_CODE, NOT_FOUND_MESSAGE));
+        todo.setTitle(request.title());
+        todo.setDone(request.done());
+        return TodoResponse.from(repository.save(todo));
     }
 
-    /** 按 id 删除 */
-    public void delete(Long id) {
-        repository.deleteById(id);
+    /** 删除当前用户的一条待办 */
+    public void delete(User user, Long id) {
+        Todo todo = repository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new ApiException(404, NOT_FOUND_CODE, NOT_FOUND_MESSAGE));
+        repository.deleteById(todo.getId());
     }
 }

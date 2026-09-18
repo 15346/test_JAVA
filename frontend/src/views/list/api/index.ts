@@ -4,15 +4,10 @@
 //  构建后由 Spring Boot 在同源 18081 下直接提供服务。
 // ============================================================
 
+import { request } from '../../../shared/http/request'
 import type { Todo } from './type'
 
 const API = '/api/todos'
-
-/** 统一发请求 + 解析 JSON */
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
-  return res.json() as Promise<T>
-}
 
 /** 获取全部待办 —— GET */
 export function listTodos(): Promise<Todo[]> {
@@ -37,7 +32,7 @@ export function updateTodo(todo: Todo): Promise<Todo> {
   })
 }
 
-/** 删除待办 —— DELETE（无响应体） */
-export async function deleteTodo(id: number): Promise<void> {
-  await fetch(`${API}/${id}`, { method: 'DELETE' })
+/** 删除待办 —— DELETE（204 无响应体，request<void> 返回 undefined） */
+export function deleteTodo(id: number): Promise<void> {
+  return request<void>(`${API}/${id}`, { method: 'DELETE' })
 }

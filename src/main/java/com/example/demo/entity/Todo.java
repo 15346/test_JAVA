@@ -1,9 +1,13 @@
 package com.example.demo.entity;
 
+import com.example.demo.auth.entity.User;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 
 /**
  * 待办事项实体 —— 对应数据库里的 todo 表。
@@ -24,14 +28,24 @@ public class Todo {
     /** 是否已完成 */
     private boolean done;
 
+    /**
+     * 归属用户。历史数据迁移前允许为空（user_id 可空），
+     * 应用启动后由 {@code SystemUserInitializer} 把无归属数据绑定到系统用户。
+     * 只通过 {@code TodoResponse} 对外输出，不序列化 User 实体。
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
     /** JPA 要求必须有一个无参构造方法 */
     public Todo() {
     }
 
-    /** 方便代码里快速创建一条新待办（默认未完成） */
-    public Todo(String title) {
+    /** 方便代码里创建一条归属于指定用户的待办 */
+    public Todo(String title, boolean done, User user) {
         this.title = title;
-        this.done = false;
+        this.done = done;
+        this.user = user;
     }
 
     public Long getId() {
@@ -56,5 +70,13 @@ public class Todo {
 
     public void setDone(boolean done) {
         this.done = done;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
     }
 }

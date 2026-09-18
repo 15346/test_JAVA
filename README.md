@@ -119,6 +119,16 @@ npm run dev
 浏览器打开： **http://localhost:5173**
 （`/api` 请求由 Vite 自动代理给 18081 后端，无需关心跨域。）
 
+### 认证页面与数据隔离
+
+- 登录页：`/#/login`
+- 注册页：`/#/register`
+- 找回密码页：`/#/forgot-password`
+- 找回密码的演示验证码固定为 `123456`，只适合开发演示，生产环境不能继续使用。
+- 密码至少 8 位，且必须包含字母、数字、符号三类字符中的至少两类，同时不能包含空白字符。
+- Todo 数据按当前登录用户隔离：用户只能查看、修改和删除自己的待办。
+- v1 不发送真实邮件；当前验证码逻辑集中在后端 `PasswordResetService` 的请求验证码与验证码校验位置，后续可在这里接入真实邮件服务商和动态验证码存储。
+
 **正式模式（一个端口跑全栈）**：
 
 ```bash
@@ -159,12 +169,11 @@ curl -X POST http://localhost:18081/api/todos -H "Content-Type: application/json
 
 ## 五、看看数据库里的数据
 
-当前默认用 **MySQL**（连接信息见 `application.properties`，会自动建库建表），
+当前默认用 **MySQL**（连接信息见 `application.properties`，会自动建库建表）；启动后端需要准备 MySQL，运行自动化测试时则使用仓库中的测试 H2 配置。
 用任意 MySQL 客户端连 `localhost:3306`，查 `demo` 库的 `todo` 表即可。
 
 想切回免安装的 H2 内存库：把 `application.properties` 里 H2 那 4 行的 `#` 去掉、
-注释掉 MySQL 那组，重启即可；并可在浏览器打开 **http://localhost:18081/h2-console**
-（JDBC URL 填 `jdbc:h2:mem:demo`，用户名 `sa`，密码留空）直接看表、手动执行 SQL。
+注释掉 MySQL 那组，重启即可；并可在浏览器打开 **http://localhost:18081/h2-console**，按当前本地 H2 配置连接后直接查看数据、手动执行 SQL。
 
 ---
 

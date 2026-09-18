@@ -1,0 +1,1 @@
+import{_ as e,y as n,w as a,a as c,o as _}from"./index-DThYevSU.js";import{C as r}from"./index-BXfzz3Vt.js";import{aF as s}from"./index-5b1p97hG.js";const p={};function m(i,d){const o=s,t=r;return _(),n(t,null,{default:a(()=>[c(o,{description:"操作日志（占位页，待实现）"})]),_:1})}const x=e(p,[["render",m]]);export{x as default};
